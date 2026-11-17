@@ -17,6 +17,18 @@ import kotlin.coroutines.resume
 val motionPlugin = plugin {
     start {
         withAppActivity { activity ->
+            registerNativeAsyncMethod("dev.motion.photo.inspect") { arguments ->
+                val uri = arguments.getOrNull(0) as? String
+                    ?: return@registerNativeAsyncMethod false
+                withContext(Dispatchers.IO) {
+                    try { inspectMotionPhoto(activity, uri) } catch (_: Exception) { false }
+                }
+            }
+
+            registerNativeAsyncMethod("dev.motion.photo.chooseFormat") { _ ->
+                withContext(Dispatchers.Main) { askUser(activity) }
+            }
+
             registerNativeAsyncMethod("dev.motion.photo.process") { arguments ->
                 val originalUri = arguments.getOrNull(0) as? String
                     ?: return@registerNativeAsyncMethod null
@@ -27,7 +39,12 @@ val motionPlugin = plugin {
                         input.readBytesLimited(100L * 1024 * 1024)
                     } ?: return@withContext null
                     val parts = MotionPhotoParser.split(bytes) ?: return@withContext null
-                    val choice = withContext(Dispatchers.Main) { askUser(activity) }
+                    val requested = arguments.getOrNull(1) as? String
+                    val choice = if (requested in listOf("mp4", "gif", "photo", "cancel")) {
+                        requested!!
+                    } else {
+                        withContext(Dispatchers.Main) { askUser(activity) }
+                    }
                     if (choice == "cancel") return@withContext mapOf("changed" to false, "cancelled" to true)
                     val cache = File(activity.cacheDir, "motion-photo-sender").apply { mkdirs() }
                     val stamp = System.nanoTime().toString(36)
@@ -99,4 +116,31 @@ private fun java.io.InputStream.readBytesLimited(max: Long): ByteArray {
         output.write(buffer, 0, read)
     }
     return output.toByteArray()
+}
+
+/**
+ * Fast, conservative XMP probe. Only reads the beginning of the original
+ * JPEG; media picker thumbnails must not trigger full 5-50 MiB decoding.
+ */
+private fun inspectMotionPhoto(activity: Activity, originalUri: String): Boolean {
+    val uri = Uri.parse(originalUri)
+    if (uri.scheme !in setOf("content", "file")) return false
+    val data = ByteArray(512 * 1024)
+    val length = activity.contentResolver.openInputStream(uri)?.use { input ->
+        var read = 0
+        while (read < data.size) {
+            val count = input.read(data, read, data.size - read)
+            if (count <= 0) break
+            read += count
+        }
+        read
+    } ?: return false
+    if (length < 4 || data[0] != 0xff.toByte() || data[1] != 0xd8.toByte()) return false
+    val head = String(data, 0, length, Charsets.ISO_8859_1)
+    return head.contains("GCamera:MotionPhoto=\"1\"") ||
+        head.contains("GCamera:MotionPhoto='1'") ||
+        head.contains("Camera:MicroVideo=\"1\"") ||
+        head.contains("Camera:MicroVideo='1'") ||
+        (head.contains("Item:Mime=\"video/mp4\"") &&
+         (head.contains("MotionPhoto") || head.contains("MicroVideo")))
 }
