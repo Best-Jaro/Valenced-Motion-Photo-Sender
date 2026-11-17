@@ -21,6 +21,9 @@ type ProcessingResult = {
   filename?: string
   mime?: string
   bytes?: number
+  width?: number
+  height?: number
+  playableDuration?: number
 }
 type MediaImageProps = {
   item?: { node?: { image?: { uri?: string } } }
@@ -71,10 +74,37 @@ function formatFor(uri: string): Format | undefined {
  */
 function convertedAttachment(file: UploadItem, result: ProcessingResult): UploadItem {
   if (!result.uri || !result.filename || !result.mime) throw Error('Converted media metadata is incomplete')
-  const id = String(file.id ?? file.filename ?? 'motion')
+  const id = String(file.id ?? file.filename ?? 'motion') + '-motion-' + Date.now()
+  if (result.mime === 'video/mp4') {
+    // Photo picker assets carry IMAGE_PICKER platform=1 and image-only fields.
+    // Reusing that descriptor for an app-created MP4 breaks Discord's native
+    // video uploader. Build an actual React Native file descriptor instead.
+    const { width, height, playableDuration } = result
+    if (typeof width !== 'number' || typeof height !== 'number' ||
+        typeof playableDuration !== 'number' ||
+        !Number.isFinite(width) || !Number.isFinite(height) ||
+        !Number.isFinite(playableDuration) ||
+        width <= 0 || height <= 0 || playableDuration <= 0) {
+      throw Error('Не удалось получить размеры или длительность MP4.')
+    }
+    return {
+      id,
+      uri: result.uri,
+      originalUri: result.uri,
+      filename: result.filename,
+      mimeType: 'video/mp4',
+      platform: 0, // REACT_NATIVE, not IMAGE_PICKER
+      origin: 1,
+      width,
+      height,
+      playableDuration,
+      size: result.bytes,
+    }
+  }
+  // Preserve the already working GIF upload path.
   const next: UploadItem = {
     ...file,
-    id: id + '-motion-' + result.mime.split('/').pop(),
+    id,
     uri: result.uri,
     originalUri: result.uri,
     filename: result.filename,
@@ -85,7 +115,7 @@ function convertedAttachment(file: UploadItem, result: ProcessingResult): Upload
   if ('type' in next) next.type = result.mime
   if ('path' in next) next.path = result.uri.replace(/^file:\/\//, '')
   if ('size' in next && typeof result.bytes === 'number') next.size = result.bytes
-  if (result.mime === 'video/mp4' || result.mime === 'image/gif') {
+  if (result.mime === 'image/gif') {
     delete next.width
     delete next.height
     delete next.playableDuration
@@ -132,9 +162,17 @@ async function convertUploadAction(action: UploadAction, selected: Map<number, F
     files.push(convertedAttachment(file, converted))
   }
   if (stopped) return
-  Dispatcher.dispatch({ ...action, files, motionPhotoSenderHandled: true } as any)
+  // Preserve the current channel, draft and other selected attachments.
+  // Do not run Discord's photo-picker optimization on freshly extracted MP4.
+  const hasVideo = files.some(file => file.mimeType === 'video/mp4' && file.platform === 0)
+  Dispatcher.dispatch({
+    ...action,
+    files,
+    allowOptimization: hasVideo ? false : action.allowOptimization,
+    motionPhotoSenderHandled: true,
+  } as any)
   selectedFormats.clear()
-  toast('Готово! Вложение добавлено в Discord.')
+  toast('Готовый файл передан загрузчику Discord.')
 }
 
 function toast(text: string, critical = false) {

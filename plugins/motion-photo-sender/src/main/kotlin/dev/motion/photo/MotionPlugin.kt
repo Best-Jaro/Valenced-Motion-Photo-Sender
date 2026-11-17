@@ -5,6 +5,7 @@ package dev.motion.photo
 import android.app.Activity
 import android.app.AlertDialog
 import android.net.Uri
+import android.media.MediaMetadataRetriever
 import app.valenced.plugins.plugin
 import app.valenced.xposed.api.registerNativeAsyncMethod
 import java.io.File
@@ -97,13 +98,45 @@ val motionPlugin = plugin {
     }
 }
 
-private fun result(file: File, mime: String): Map<String, Any> = mapOf(
-    "changed" to true,
-    "uri" to Uri.fromFile(file).toString(),
-    "filename" to file.name,
-    "mime" to mime,
-    "bytes" to file.length(),
-)
+private fun result(file: File, mime: String): Map<String, Any> {
+    require(file.isFile && file.length() > 0) { "Output file was not created" }
+    val output = mutableMapOf<String, Any>(
+        "changed" to true,
+        "uri" to Uri.fromFile(file).toString(),
+        "filename" to file.name,
+        "mime" to mime,
+        "bytes" to file.length(),
+    )
+    if (mime == "video/mp4") {
+        // Discord's video uploader needs real VIDEO metadata rather than
+        // inherited JPEG width/height and IMAGE_PICKER platform values.
+        val retriever = MediaMetadataRetriever()
+        try {
+            retriever.setDataSource(file.absolutePath)
+            val codedWidth = retriever.extractMetadata(
+                MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)?.toIntOrNull()
+                ?: error("MP4 is missing video width")
+            val codedHeight = retriever.extractMetadata(
+                MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)?.toIntOrNull()
+                ?: error("MP4 is missing video height")
+            val durationMs = retriever.extractMetadata(
+                MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull()
+                ?: error("MP4 is missing duration")
+            val rotation = retriever.extractMetadata(
+                MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION)
+                ?.toIntOrNull()?.let { ((it % 360) + 360) % 360 } ?: 0
+            require(codedWidth > 0 && codedHeight > 0 && durationMs > 0) {
+                "MP4 dimensions or duration are invalid"
+            }
+            output["width"] = if (rotation == 90 || rotation == 270) codedHeight else codedWidth
+            output["height"] = if (rotation == 90 || rotation == 270) codedWidth else codedHeight
+            output["playableDuration"] = durationMs / 1000.0
+        } finally {
+            retriever.release()
+        }
+    }
+    return output
+}
 
 private suspend fun askUser(activity: Activity): String = suspendCancellableCoroutine { cont ->
     val options = arrayOf(

@@ -26,3 +26,10 @@
 - Fast freeze MP4 should show the first VIDEO frame for about 0.5s without re-encoding; verify sound, orientation, frame rate and thumbnail.
 - The separate high-resolution JPEG photo intro remains in the slow H.264 mode.
 - If no original Motion Photo data is available, uploading the JPEG instead should be blocked with a visible error.
+
+## v0.5.1 MP4 upload tests
+
+1. Choose fast original MP4 and use Discord gallery Send. Expected: video attachment, not JPEG, no sharing dialog, no Upload Failed.
+2. Test fast freeze MP4, then full cover MP4. Confirm first two maintain source FPS and quality.
+3. Confirm that GIF still works; it uses the previous descriptor path.
+4. If video still fails, collect Valenced logcat/diagnostics around CloudUpload and actual upload failure; do not assume v0.5.1 has fixed device-specific issues.

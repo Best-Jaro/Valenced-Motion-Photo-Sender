@@ -53,3 +53,13 @@
 JPEG нельзя поместить внутрь MP4 в качестве обычного видеокадра: фотографию сначала пришлось бы кодировать как совместимый HEVC IDR-кадр. Соединение с существующим видеопотоком без перекодировки остальных кадров возможно только при согласованных параметрах кодека, и его поддержка не гарантирована. Алгоритм превью Discord тоже может выбрать другой кадр.
 
 Проверить работу в самой галерее и совместимость быстрого стоп-кадра нужно на устройстве.
+
+## v0.5.1 — MP4 upload fix (experimental)
+
+GIF uploaded successfully in v0.5.0, but every MP4 variant gave Discord's generic Upload Failed dialog.
+
+Root cause suspected: v0.5.0 cloned an IMAGE_PICKER photo descriptor, inherited photo-specific platform flags, and then deleted width/height/playableDuration. Those fields may be essential to Discord's video-specific upload and optimization path.
+
+v0.5.1 creates a clean React Native MP4 attachment with `platform: 0` (not image picker), `origin: 1`, actual video width/height and duration read via Android MediaMetadataRetriever; sets `allowOptimization: false` to avoid Discord's optional video recompression. Source HEVC/AAC is still copied unchanged in the fast MP4 modes. GIF flow is unchanged.
+
+**This is a hypothesis-driven fix, not yet verified on the phone**. If Upload Failed still appears, capture Valenced logs at the upload moment; a generic dialog does not expose the actual HTTP/native error.
