@@ -29,16 +29,6 @@ val motionPlugin = plugin {
                 withContext(Dispatchers.Main) { askUser(activity) }
             }
 
-            registerNativeAsyncMethod("dev.motion.photo.share") { arguments ->
-                val uri = arguments.getOrNull(0) as? String
-                    ?: error("Missing converted file URI")
-                val mime = arguments.getOrNull(1) as? String
-                    ?: error("Missing converted file type")
-                val filename = arguments.getOrNull(2) as? String
-                    ?: error("Missing converted filename")
-                MotionShare.send(activity, uri, mime, filename)
-            }
-
             registerNativeAsyncMethod("dev.motion.photo.process") { arguments ->
                 val originalUri = arguments.getOrNull(0) as? String
                     ?: return@registerNativeAsyncMethod null
@@ -50,7 +40,7 @@ val motionPlugin = plugin {
                     } ?: return@withContext null
                     val parts = MotionPhotoParser.split(bytes) ?: return@withContext null
                     val requested = arguments.getOrNull(1) as? String
-                    val choice = if (requested in listOf("mp4", "mp4-cover", "gif", "photo", "cancel")) {
+                    val choice = if (requested in listOf("mp4", "mp4-freeze", "mp4-cover", "gif", "photo", "cancel")) {
                         requested!!
                     } else {
                         withContext(Dispatchers.Main) { askUser(activity) }
@@ -67,9 +57,14 @@ val motionPlugin = plugin {
                     }
                     try {
                         if (choice == "mp4") {
-                            // The embedded MP4 is already valid video, with HEVC, AAC and
-                            // rotation metadata intact. Avoid the very slow re-encode.
+                            // Copy embedded HEVC/AAC unchanged, without changing FPS or quality.
                             return@withContext result(rawVideo, "video/mp4")
+                        }
+                        if (choice == "mp4-freeze") {
+                            val out = File(cache, "motion-$stamp-freeze.mp4")
+                            // This freezes the first VIDEO keyframe, not the separate JPEG still.
+                            MotionFastFreeze.prependFirstVideoFrame(rawVideo, out, 500_000L)
+                            return@withContext result(out, "video/mp4")
                         }
                         if (choice == "gif") {
                             val out = File(cache, "motion-$stamp.gif")
@@ -112,8 +107,9 @@ private fun result(file: File, mime: String): Map<String, Any> = mapOf(
 
 private suspend fun askUser(activity: Activity): String = suspendCancellableCoroutine { cont ->
     val options = arrayOf(
-        "MP4 — быстро, без перекодирования",
-        "MP4 — с фотографией в начале (медленнее)",
+        "MP4 — быстро, оригинальное видео",
+        "MP4 — быстрый стоп-кадр из видео 0,5с",
+        "MP4 — с настоящим фото (медленно)",
         "GIF — улучшенные цвета",
         "Обычная фотография",
         "Отмена"
@@ -121,7 +117,7 @@ private suspend fun askUser(activity: Activity): String = suspendCancellableCoro
     val dialog = AlertDialog.Builder(activity)
         .setTitle("Send Motion Photo as...")
         .setItems(options) { _, index ->
-            if (cont.isActive) cont.resume(arrayOf("mp4", "mp4-cover", "gif", "photo", "cancel")[index])
+            if (cont.isActive) cont.resume(arrayOf("mp4", "mp4-freeze", "mp4-cover", "gif", "photo", "cancel")[index])
         }
         .setOnCancelListener { if (cont.isActive) cont.resume("cancel") }
         .create()

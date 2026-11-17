@@ -18,3 +18,11 @@
 - Test fast MP4, cover MP4, GIF separately; the fast version has NO embedded photo intro.
 - Time processing separately for extraction, cover encoding and GIF; do not promise timing on all phones.
 - Android share still requires confirming the share in Discord, not the original gallery Send button.
+
+## v0.5.0 regression checks
+
+- Choose MP4 using the small green button on a Motion Photo thumbnail, **select that thumbnail normally**, then press Discord's original gallery Send. No Android Share Sheet should open. MP4 should be attached instead of JPEG.
+- Other attachments should be left unchanged.
+- Fast freeze MP4 should show the first VIDEO frame for about 0.5s without re-encoding; verify sound, orientation, frame rate and thumbnail.
+- The separate high-resolution JPEG photo intro remains in the slow H.264 mode.
+- If no original Motion Photo data is available, uploading the JPEG instead should be blocked with a visible error.

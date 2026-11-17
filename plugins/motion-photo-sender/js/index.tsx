@@ -1,7 +1,9 @@
 import { ToastActionCreators } from '@valenced/discord/actions'
 import { getModules } from '@valenced/modules/finders'
-import { createFilterGenerator, withProps } from '@valenced/modules/finders/filters'
+import { createFilterGenerator } from '@valenced/modules/finders/filters'
 import { callNativeMethod } from '@valenced/modules/native'
+import { Dispatcher } from '@valenced/discord/common/flux'
+import { onFluxEventDispatched } from '@valenced/discord/flux'
 import { after, instead } from '@valenced/patcher'
 import { useEffect, useState } from 'react'
 import { Pressable, StyleSheet, Text, View } from 'react-native'
@@ -10,7 +12,7 @@ import type {
 } from '@valenced/modules/finders/filters'
 import type { FC, MemoExoticComponent, ReactElement, ReactNode } from 'react'
 
-type Format = 'mp4' | 'mp4-cover' | 'gif' | 'photo'
+type Format = 'mp4' | 'mp4-freeze' | 'mp4-cover' | 'gif' | 'photo'
 type UploadItem = Record<string, any>
 type ProcessingResult = {
   changed: boolean
@@ -63,27 +65,76 @@ function formatFor(uri: string): Format | undefined {
   return selectedFormats.get(safeKey(uri))
 }
 
-function replaceAsset(item: UploadItem, result: ProcessingResult): void {
-  if (!result.uri || !result.filename || !result.mime) return
-  const target = candidateFile(item)
-  const path = result.uri.replace(/^file:\/\//, '')
-  for (const obj of new Set([item, target])) {
-    if (!obj || typeof obj !== 'object') continue
-    for (const prop of ['uri', 'localUri', 'fileUri']) {
-      if (prop in obj || prop === 'uri') obj[prop] = result.uri
-    }
-    if ('path' in obj) obj.path = path
-    for (const prop of ['name', 'filename']) {
-      if (prop in obj || prop === 'filename') obj[prop] = result.filename
-    }
-    for (const prop of ['type', 'mimeType']) {
-      if (prop in obj || prop === 'mimeType') obj[prop] = result.mime
-    }
-    if (typeof result.bytes === 'number') {
-      if ('size' in obj) obj.size = result.bytes
-      if ('fileSize' in obj) obj.fileSize = result.bytes
-    }
+
+/**
+ * Dispatch a new upload descriptor rather than mutating a photo-specific object.
+ */
+function convertedAttachment(file: UploadItem, result: ProcessingResult): UploadItem {
+  if (!result.uri || !result.filename || !result.mime) throw Error('Converted media metadata is incomplete')
+  const id = String(file.id ?? file.filename ?? 'motion')
+  const next: UploadItem = {
+    ...file,
+    id: id + '-motion-' + result.mime.split('/').pop(),
+    uri: result.uri,
+    originalUri: result.uri,
+    filename: result.filename,
+    mimeType: result.mime,
   }
+  if ('file' in next) delete next.file
+  if ('name' in next) next.name = result.filename
+  if ('type' in next) next.type = result.mime
+  if ('path' in next) next.path = result.uri.replace(/^file:\/\//, '')
+  if ('size' in next && typeof result.bytes === 'number') next.size = result.bytes
+  if (result.mime === 'video/mp4' || result.mime === 'image/gif') {
+    delete next.width
+    delete next.height
+    delete next.playableDuration
+  }
+  return next
+}
+
+type UploadAction = {
+  type: string
+  files?: UploadItem[]
+  channelId?: string
+  draftType?: number
+  motionPhotoSenderHandled?: boolean
+  [key: string]: unknown
+}
+
+function selectedFor(file: UploadItem, numberOfImages: number): Format | undefined {
+  const uri = candidateUri(file)
+  const match = [uri, file.originalUri, file.contentUri, file.path].find(v =>
+    typeof v === 'string' && selectedFormats.has(safeKey(v)),
+  )
+  if (typeof match === 'string') return selectedFormats.get(safeKey(match))
+  // Gallery may substitute a temporary URI between picking and uploading.
+  // Use fallback only if exactly one image and one chosen format exist.
+  if (numberOfImages === 1 && selectedFormats.size === 1) {
+    return selectedFormats.values().next().value
+  }
+}
+
+async function convertUploadAction(action: UploadAction, selected: Map<number, Format>): Promise<void> {
+  const files: UploadItem[] = []
+  for (let i = 0; i < (action.files?.length ?? 0); i++) {
+    const file = action.files![i]
+    const format = selected.get(i)
+    if (!format || format === 'photo') {
+      files.push(file)
+      continue
+    }
+    const uri = candidateUri(file)
+    if (!uri) throw Error('Discord не предоставил URI Motion Photo.')
+    toast(format === 'mp4' ? 'Извлекаю исходный MP4...' : 'Конвертирую Motion Photo...')
+    const converted = await callNativeMethod('dev.motion.photo.process', [uri, format]) as ProcessingResult | null
+    if (!converted?.changed) throw Error('Оригинальная Motion Photo недоступна для чтения.')
+    files.push(convertedAttachment(file, converted))
+  }
+  if (stopped) return
+  Dispatcher.dispatch({ ...action, files, motionPhotoSenderHandled: true } as any)
+  selectedFormats.clear()
+  toast('Готово! Вложение добавлено в Discord.')
 }
 
 function toast(text: string, critical = false) {
@@ -163,29 +214,23 @@ function MotionPhotoBadge({ uri }: { uri: string }) {
         event.stopPropagation()
         if (busy) return
         setBusy(true)
-        void (async () => {
-          const selected = await callNativeMethod('dev.motion.photo.chooseFormat', [])
-          if (stopped || !['mp4', 'mp4-cover', 'gif', 'photo'].includes(String(selected))) return
-          const format = selected as Format
-          toast(format === 'mp4' ? 'Извлекаю оригинальный MP4 без перекодирования...' : `Конвертирую Motion Photo: ${format.toUpperCase()}...`)
-          const processed = await callNativeMethod('dev.motion.photo.process', [uri, format]) as ProcessingResult | null
-          if (!processed?.changed || !processed.uri || !processed.mime || !processed.filename) {
-            throw new Error('Не удалось извлечь видео из выбранной фотографии.')
-          }
-          const shared = await callNativeMethod('dev.motion.photo.share', [
-            processed.uri,
-            processed.mime,
-            processed.filename,
-          ])
-          if (shared !== true) throw new Error('Android не открыл отправку файла.')
-          // Do not mark the original gallery attachment as converted.
-          // This flow shares the newly created file rather than changing the gallery item.
-          setChoice(format)
-          toast(`Готово: ${format.toUpperCase()}. Подтверди отправку в Discord.`)
-        })()
+        void callNativeMethod('dev.motion.photo.chooseFormat', [])
+          .then(selected => {
+            if (stopped) return
+            if (selected === 'cancel') {
+              selectedFormats.delete(key)
+              setChoice(undefined)
+              return
+            }
+            if (!['mp4', 'mp4-freeze', 'mp4-cover', 'gif', 'photo'].includes(String(selected))) return
+            const format = selected as Format
+            selectedFormats.set(key, format)
+            setChoice(format)
+            toast('Формат выбран. Отметь фото и нажми обычную кнопку отправки в галерее.')
+          })
           .catch(error => {
             const detail = error instanceof Error ? error.message : String(error)
-            toast(`Motion Photo: ${detail}`, true)
+            toast('Выбор формата: ' + detail, true)
           })
           .finally(() => setBusy(false))
       }}
@@ -251,53 +296,33 @@ export default plugin({
       },
     ))
 
-    // Standard pre-upload path. A manually selected format avoids a second popup.
-    cleanup(getModules(withProps('uploadLocalFiles'), mod => {
-      logger.log('Motion Photo Sender: uploadLocalFiles found')
-      cleanup(instead(mod, 'uploadLocalFiles', async function(args, original) {
-        const payload = args[0] as UploadItem | undefined
-        const items = payload?.items ?? payload?.files ?? payload?.uploads
-        if (stopped || !Array.isArray(items)) {
-          return Reflect.apply(original, this, args)
-        }
-        try {
-          const kept: UploadItem[] = []
-          for (const item of items as UploadItem[]) {
-            if (stopped || !looksLikeJpeg(item)) {
-              kept.push(item)
-              continue
-            }
-            const uri = candidateUri(item)
-            if (!uri) {
-              kept.push(item)
-              continue
-            }
-            const result = await callNativeMethod(
-              'dev.motion.photo.process',
-              [uri, formatFor(uri) ?? 'ask'],
-            ) as ProcessingResult | null
-            if (!result?.changed) {
-              if (!result?.cancelled) kept.push(item)
-              continue
-            }
-            replaceAsset(item, result)
-            selectedFormats.delete(safeKey(uri))
-            kept.push(item)
-          }
-          if (kept.length === 0) return
-          if (payload) {
-            if (Array.isArray(payload.items)) payload.items = kept
-            else if (Array.isArray(payload.files)) payload.files = kept
-            else if (Array.isArray(payload.uploads)) payload.uploads = kept
-          }
-          return Reflect.apply(original, this, args)
-        } catch (error) {
-          currentPlugin.reportError(error)
-          toast('Ошибка обработки Motion Photo. Отправляю оригинал.', true)
-          return Reflect.apply(original, this, args)
-        }
-      }))
-    }, { max: 1 }))
+    // This event is dispatched by the Discord gallery's ordinary send button.
+    // Pause the event, convert in Kotlin, then re-dispatch to the same draft.
+    cleanup(onFluxEventDispatched('UPLOAD_ATTACHMENT_ADD_FILES', (event: any) => {
+      const action = event as UploadAction
+      if (stopped || action.motionPhotoSenderHandled || !Array.isArray(action.files)) return event
+      const images = action.files.filter(file => looksLikeJpeg(file))
+      if (!images.length || selectedFormats.size === 0) return event
+      const selected = new Map<number, Format>()
+      action.files.forEach((file, index) => {
+        if (!looksLikeJpeg(file)) return
+        const format = selectedFor(file, images.length)
+        if (format) selected.set(index, format)
+      })
+      if (!selected.size) return event
+      if ([...selected.values()].every(format => format === 'photo')) {
+        selectedFormats.clear()
+        return event
+      }
+      // Returning undefined synchronously cancels the ORIGINAL JPEG action.
+      void convertUploadAction(action, selected).catch(error => {
+        currentPlugin.reportError(error)
+        const detail = error instanceof Error ? error.message : String(error)
+        // Fail closed: do NOT upload the original instead.
+        toast('Motion Photo: ' + detail + '. Отправка отменена.', true)
+      })
+      return undefined
+    }))
   },
 })
 
@@ -314,10 +339,6 @@ declare module '@valenced/modules/native' {
     'dev.motion.photo.process': [
       args: [uri: string, mode: Format | 'ask'],
       returnValue: ProcessingResult | null,
-    ]
-    'dev.motion.photo.share': [
-      args: [uri: string, mime: string, filename: string],
-      returnValue: boolean,
     ]
   }
 }
