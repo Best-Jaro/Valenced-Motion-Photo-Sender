@@ -2,6 +2,12 @@ package dev.motion.photo
 
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.Matrix
+import android.graphics.Paint
+import android.graphics.Rect
+import android.graphics.RectF
 import android.graphics.ImageFormat
 import android.media.Image
 import android.media.MediaCodec
@@ -28,16 +34,25 @@ object MotionMp4Encoder {
         var muxerStarted = false
         try {
             retriever.setDataSource(rawMp4.absolutePath)
-            val width = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)?.toIntOrNull()
+            val codedWidth = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)?.toIntOrNull()
                 ?: error("Missing video width")
-            val height = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)?.toIntOrNull()
+            val codedHeight = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)?.toIntOrNull()
                 ?: error("Missing video height")
+            val rotation = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION)
+                ?.toIntOrNull()?.let { ((it % 360) + 360) % 360 } ?: 0
+            // HEVC from OnePlus may be encoded in landscape (1440x1080) with a
+            // -90 degree display rotation. Android's decoder returns a portrait
+            // Bitmap. Encoding into codedWidth x codedHeight would stretch it.
+            val width = if (rotation == 90 || rotation == 270) codedHeight else codedWidth
+            val height = if (rotation == 90 || rotation == 270) codedWidth else codedHeight
             require(width > 0 && height > 0 && width % 2 == 0 && height % 2 == 0)
             require(width.toLong() * height < 6_000_000L) { "Video resolution too large" }
             val durationUs = (retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
                 ?.toLongOrNull() ?: error("Missing video duration")) * 1000L
             require(durationUs in 1..15_000_000) { "Video duration is unsupported" }
-            val fps = 30
+            // This is explicitly the slower cover variant. Fewer frame extractions
+            // reduce MediaMetadataRetriever seek/HEVC decode time.
+            val fps = 15
             val frameUs = 1_000_000L / fps
             val stillCount = ceil(introUs.toDouble() / frameUs).toInt()
             val clipCount = ceil(durationUs.toDouble() / frameUs).toInt()
@@ -115,8 +130,8 @@ object MotionMp4Encoder {
             }
 
             val fullPhoto = BitmapFactory.decodeFile(photo.absolutePath) ?: error("Could not decode still photo")
-            val still = Bitmap.createScaledBitmap(fullPhoto, width, height, true)
-            if (still !== fullPhoto) fullPhoto.recycle()
+            val still = fitInside(fullPhoto, width, height)
+            fullPhoto.recycle()
             try {
                 repeat(stillCount) { i -> queue(still, i * frameUs) }
             } finally {
@@ -124,13 +139,19 @@ object MotionMp4Encoder {
             }
             for (i in 0 until clipCount) {
                 val sourceTime = i * frameUs
-                val frame = retriever.getFrameAtTime(sourceTime, MediaMetadataRetriever.OPTION_CLOSEST)
-                    ?: continue
-                val sized = if (frame.width == width && frame.height == height) frame
-                    else Bitmap.createScaledBitmap(frame, width, height, true)
+                val frame = if (android.os.Build.VERSION.SDK_INT >= 27) {
+                    retriever.getScaledFrameAtTime(
+                        sourceTime, MediaMetadataRetriever.OPTION_CLOSEST, width, height
+                    )
+                } else {
+                    retriever.getFrameAtTime(sourceTime, MediaMetadataRetriever.OPTION_CLOSEST)
+                } ?: continue
+                val oriented = orient(frame, rotation, width, height)
+                val sized = fitInside(oriented, width, height)
                 try { queue(sized, introUs + sourceTime) }
                 finally {
-                    if (sized !== frame) sized.recycle()
+                    sized.recycle()
+                    if (oriented !== frame) oriented.recycle()
                     frame.recycle()
                 }
             }
@@ -168,6 +189,29 @@ object MotionMp4Encoder {
             try { if (muxerStarted) muxer?.stop() } catch (_: Exception) { }
             muxer?.release()
         }
+    }
+
+    private fun orient(source: Bitmap, rotation: Int, width: Int, height: Int): Bitmap {
+        val neededPortrait = height > width
+        val isPortrait = source.height > source.width
+        if (neededPortrait == isPortrait || rotation !in listOf(90, 270)) return source
+        val matrix = Matrix().apply { postRotate(rotation.toFloat()) }
+        return Bitmap.createBitmap(source, 0, 0, source.width, source.height, matrix, true)
+    }
+
+    private fun fitInside(source: Bitmap, width: Int, height: Int): Bitmap {
+        val canvasBitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(canvasBitmap)
+        canvas.drawColor(Color.BLACK)
+        val fit = minOf(width.toFloat() / source.width, height.toFloat() / source.height)
+        val drawW = source.width * fit
+        val drawH = source.height * fit
+        val x = (width - drawW) / 2
+        val y = (height - drawH) / 2
+        canvas.drawBitmap(source, Rect(0, 0, source.width, source.height),
+            RectF(x, y, x + drawW, y + drawH),
+            Paint(Paint.FILTER_BITMAP_FLAG))
+        return canvasBitmap
     }
 
     private fun copyBitmapToYuv(source: Bitmap, image: Image, width: Int, height: Int) {

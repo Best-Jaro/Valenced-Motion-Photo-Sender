@@ -10,7 +10,7 @@ import type {
 } from '@valenced/modules/finders/filters'
 import type { FC, MemoExoticComponent, ReactElement, ReactNode } from 'react'
 
-type Format = 'mp4' | 'gif' | 'photo'
+type Format = 'mp4' | 'mp4-cover' | 'gif' | 'photo'
 type UploadItem = Record<string, any>
 type ProcessingResult = {
   changed: boolean
@@ -165,9 +165,9 @@ function MotionPhotoBadge({ uri }: { uri: string }) {
         setBusy(true)
         void (async () => {
           const selected = await callNativeMethod('dev.motion.photo.chooseFormat', [])
-          if (stopped || !['mp4', 'gif', 'photo'].includes(String(selected))) return
+          if (stopped || !['mp4', 'mp4-cover', 'gif', 'photo'].includes(String(selected))) return
           const format = selected as Format
-          toast(`Конвертирую Motion Photo в ${format.toUpperCase()}...`)
+          toast(format === 'mp4' ? 'Извлекаю оригинальный MP4 без перекодирования...' : `Конвертирую Motion Photo: ${format.toUpperCase()}...`)
           const processed = await callNativeMethod('dev.motion.photo.process', [uri, format]) as ProcessingResult | null
           if (!processed?.changed || !processed.uri || !processed.mime || !processed.filename) {
             throw new Error('Не удалось извлечь видео из выбранной фотографии.')
@@ -309,7 +309,7 @@ declare module '@valenced/modules/native' {
     ]
     'dev.motion.photo.chooseFormat': [
       args: [],
-      returnValue: 'mp4' | 'gif' | 'photo' | 'cancel',
+      returnValue: Format | 'cancel',
     ]
     'dev.motion.photo.process': [
       args: [uri: string, mode: Format | 'ask'],

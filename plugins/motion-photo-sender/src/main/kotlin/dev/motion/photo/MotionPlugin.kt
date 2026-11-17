@@ -50,7 +50,7 @@ val motionPlugin = plugin {
                     } ?: return@withContext null
                     val parts = MotionPhotoParser.split(bytes) ?: return@withContext null
                     val requested = arguments.getOrNull(1) as? String
-                    val choice = if (requested in listOf("mp4", "gif", "photo", "cancel")) {
+                    val choice = if (requested in listOf("mp4", "mp4-cover", "gif", "photo", "cancel")) {
                         requested!!
                     } else {
                         withContext(Dispatchers.Main) { askUser(activity) }
@@ -66,20 +66,27 @@ val motionPlugin = plugin {
                         writeBytes(parts.video)
                     }
                     try {
+                        if (choice == "mp4") {
+                            // The embedded MP4 is already valid video, with HEVC, AAC and
+                            // rotation metadata intact. Avoid the very slow re-encode.
+                            return@withContext result(rawVideo, "video/mp4")
+                        }
                         if (choice == "gif") {
                             val out = File(cache, "motion-$stamp.gif")
                             MotionGifEncoder.write(jpg, rawVideo, out)
                             return@withContext result(out, "image/gif")
                         }
+                        if (choice != "mp4-cover") error("Unsupported output mode: $choice")
                         val out = File(cache, "motion-$stamp.mp4")
                         try {
                             MotionMp4Encoder.prependStill(jpg, rawVideo, out, 500_000L)
                         } catch (e: Exception) {
+                            // Explicitly warn rather than silently pretend there is a cover.
                             rawVideo.copyTo(out, overwrite = true)
                             withContext(Dispatchers.Main) {
                                 AlertDialog.Builder(activity)
                                     .setTitle("Motion Photo")
-                                    .setMessage("Video cover conversion failed on this device. Sending original MP4 without a photo intro.")
+                                    .setMessage("Не получилось добавить фото в начало MP4 на этом устройстве. Видео будет отправлено в оригинальном качестве, без обложки.")
                                     .setPositiveButton("OK", null).show()
                             }
                         }
@@ -104,11 +111,17 @@ private fun result(file: File, mime: String): Map<String, Any> = mapOf(
 )
 
 private suspend fun askUser(activity: Activity): String = suspendCancellableCoroutine { cont ->
-    val options = arrayOf("MP4 (photo intro + audio)", "GIF (photo first)", "Still photo", "Cancel")
+    val options = arrayOf(
+        "MP4 — быстро, без перекодирования",
+        "MP4 — с фотографией в начале (медленнее)",
+        "GIF — улучшенные цвета",
+        "Обычная фотография",
+        "Отмена"
+    )
     val dialog = AlertDialog.Builder(activity)
         .setTitle("Send Motion Photo as...")
         .setItems(options) { _, index ->
-            if (cont.isActive) cont.resume(arrayOf("mp4", "gif", "photo", "cancel")[index])
+            if (cont.isActive) cont.resume(arrayOf("mp4", "mp4-cover", "gif", "photo", "cancel")[index])
         }
         .setOnCancelListener { if (cont.isActive) cont.resume("cancel") }
         .create()
