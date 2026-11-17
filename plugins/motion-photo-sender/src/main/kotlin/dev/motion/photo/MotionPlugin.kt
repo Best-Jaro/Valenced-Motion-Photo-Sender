@@ -1,0 +1,102 @@
+@file:JvmName("MotionPlugin")
+
+package dev.motion.photo
+
+import android.app.Activity
+import android.app.AlertDialog
+import android.net.Uri
+import app.valenced.plugins.plugin
+import app.valenced.xposed.api.registerNativeAsyncMethod
+import java.io.File
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withContext
+import kotlin.coroutines.resume
+
+@Suppress("unused")
+val motionPlugin = plugin {
+    start {
+        withAppActivity { activity ->
+            registerNativeAsyncMethod("dev.motion.photo.process") { arguments ->
+                val originalUri = arguments.getOrNull(0) as? String
+                    ?: return@registerNativeAsyncMethod null
+                withContext(Dispatchers.IO) {
+                    val uri = Uri.parse(originalUri)
+                    if (uri.scheme !in setOf("content", "file")) return@withContext null
+                    val bytes = activity.contentResolver.openInputStream(uri)?.use { input ->
+                        input.readBytesLimited(100L * 1024 * 1024)
+                    } ?: return@withContext null
+                    val parts = MotionPhotoParser.split(bytes) ?: return@withContext null
+                    val choice = withContext(Dispatchers.Main) { askUser(activity) }
+                    if (choice == "cancel") return@withContext mapOf("changed" to false, "cancelled" to true)
+                    val cache = File(activity.cacheDir, "motion-photo-sender").apply { mkdirs() }
+                    val stamp = System.nanoTime().toString(36)
+                    val jpg = File(cache, "motion-$stamp.jpg").apply { writeBytes(parts.photo) }
+                    if (choice == "photo") {
+                        return@withContext result(jpg, "image/jpeg")
+                    }
+                    val rawVideo = File(cache, "motion-$stamp-original.mp4").apply {
+                        writeBytes(parts.video)
+                    }
+                    try {
+                        if (choice == "gif") {
+                            val out = File(cache, "motion-$stamp.gif")
+                            MotionGifEncoder.write(jpg, rawVideo, out)
+                            return@withContext result(out, "image/gif")
+                        }
+                        val out = File(cache, "motion-$stamp.mp4")
+                        try {
+                            MotionMp4Encoder.prependStill(jpg, rawVideo, out, 500_000L)
+                        } catch (e: Exception) {
+                            rawVideo.copyTo(out, overwrite = true)
+                            withContext(Dispatchers.Main) {
+                                AlertDialog.Builder(activity)
+                                    .setTitle("Motion Photo")
+                                    .setMessage("Video cover conversion failed on this device. Sending original MP4 without a photo intro.")
+                                    .setPositiveButton("OK", null).show()
+                            }
+                        }
+                        return@withContext result(out, "video/mp4")
+                    } finally {
+                        cache.listFiles()?.filter {
+                            it.lastModified() < System.currentTimeMillis() - 24 * 60 * 60 * 1000L
+                        }?.forEach { it.delete() }
+                    }
+                }
+            }
+        }
+    }
+}
+
+private fun result(file: File, mime: String): Map<String, Any> = mapOf(
+    "changed" to true,
+    "uri" to Uri.fromFile(file).toString(),
+    "filename" to file.name,
+    "mime" to mime,
+    "bytes" to file.length(),
+)
+
+private suspend fun askUser(activity: Activity): String = suspendCancellableCoroutine { cont ->
+    val options = arrayOf("MP4 (photo intro + audio)", "GIF (photo first)", "Still photo", "Cancel")
+    val dialog = AlertDialog.Builder(activity)
+        .setTitle("Send Motion Photo as...")
+        .setItems(options) { _, index ->
+            if (cont.isActive) cont.resume(arrayOf("mp4", "gif", "photo", "cancel")[index])
+        }
+        .setOnCancelListener { if (cont.isActive) cont.resume("cancel") }
+        .create()
+    cont.invokeOnCancellation { dialog.dismiss() }
+    dialog.show()
+}
+
+private fun java.io.InputStream.readBytesLimited(max: Long): ByteArray {
+    val output = java.io.ByteArrayOutputStream()
+    val buffer = ByteArray(8192)
+    while (true) {
+        val read = read(buffer)
+        if (read < 0) break
+        if (output.size().toLong() + read > max) throw IllegalArgumentException("Input is over 100 MiB")
+        output.write(buffer, 0, read)
+    }
+    return output.toByteArray()
+}
