@@ -1,9 +1,8 @@
-name: Build Motion Photo Sender
+name: Build and Release Motion Photo Sender
 
 on:
   push:
     branches: [main]
-    tags: ['v*']
   workflow_dispatch:
 
 permissions:
@@ -12,7 +11,7 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 45
     steps:
       - name: Checkout plugin source
         uses: actions/checkout@v4
@@ -35,33 +34,68 @@ jobs:
       - name: Install Bun
         uses: oven-sh/setup-bun@v2
 
-      - name: Copy plugin into template
-        run: cp -R source/plugins/motion-photo-sender template/plugins/
+      - name: Copy both plugin editions into official template
+        run: |
+          cp -R source/plugins/motion-photo-sender template/plugins/
+          cp -R source/plugins/motion-photo-gif-only template/plugins/
 
-      - name: Build installable ZIP
+      # Packaging tasks share build/dist and clean it when run.
+      # Build sequentially and save the first ZIP before building the second.
+      - name: Build full and GIF-only plugin ZIPs
         working-directory: template
         env:
           GITHUB_ACTOR: ${{ github.actor }}
           GITHUB_TOKEN: ${{ secrets.READ_PACKAGES_TOKEN || github.token }}
         run: |
+          set -euo pipefail
           chmod +x ./gradlew
-          ./gradlew --no-daemon packageMotionPhotoSender
-          test -s build/dist/dev.motion.photo.sender@0.5.2.zip
+          mkdir -p ../release-assets
 
-      - name: Upload compiled plugin
+          ./gradlew --no-daemon packageMotionPhotoSender
+          full="build/dist/dev.motion.photo.sender@0.5.3.zip"
+          test -s "$full"
+          unzip -p "$full" manifest.json | grep -Fq '"name": "Motion Photo Sender"'
+          cp "$full" ../release-assets/MotionPhotoSender-Full-v0.5.3.zip
+
+          ./gradlew --no-daemon packageMotionPhotoGifOnly
+          gif="build/dist/dev.motion.photo.sender@0.5.3.zip"
+          test -s "$gif"
+          unzip -p "$gif" manifest.json | grep -Fq '"name": "Motion Photo Sender (GIF Only)"'
+          cp "$gif" ../release-assets/MotionPhotoSender-GIF-Only-v0.5.3.zip
+
+          for pkg in ../release-assets/*.zip; do
+            unzip -t "$pkg" | tail -n 1
+            unzip -Z -1 "$pkg" | grep -Fxq 'index.js'
+            unzip -Z -1 "$pkg" | grep -Fxq 'plugin.jar'
+            echo "Verified $pkg"
+          done
+
+      - name: Save both ZIPs in GitHub Actions
         uses: actions/upload-artifact@v4
         with:
-          name: Motion-Photo-Sender-v0.5.2
-          path: template/build/dist/dev.motion.photo.sender@0.5.2.zip
+          name: Motion-Photo-Sender-v0.5.3-Both-Editions
+          path: release-assets/*.zip
           if-no-files-found: error
-          retention-days: 30
+          retention-days: 90
 
-      - name: Release on version tag
-        if: startsWith(github.ref, 'refs/tags/v')
+      # Publish an actual GitHub Release with two separately named assets.
+      # One plugin ID is shared by both editions, so installing one replaces
+      # the other instead of enabling conflicting duplicate hooks.
+      - name: Publish GitHub Release with both editions
+        if: github.ref == 'refs/heads/main'
+        working-directory: source
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create '${{ github.ref_name }}' template/build/dist/dev.motion.photo.sender@0.5.2.zip \
-            --repo '${{ github.repository }}' \
-            --title 'Motion Photo Sender v0.5.2' \
-            --notes 'Экспериментальная сборка для Valenced; требуется тестирование на устройстве.'
+          set -euo pipefail
+          tag="v0.5.3"
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$tag" ../release-assets/*.zip --clobber --repo "$GITHUB_REPOSITORY"
+            gh release edit "$tag" --notes-file RELEASE_NOTES_v0.5.3.md --repo "$GITHUB_REPOSITORY"
+          else
+            gh release create "$tag" ../release-assets/*.zip \
+              --repo "$GITHUB_REPOSITORY" \
+              --target "$GITHUB_SHA" \
+              --title "Motion Photo Sender v0.5.3 — Full + GIF Only" \
+              --notes-file RELEASE_NOTES_v0.5.3.md
+          fi
