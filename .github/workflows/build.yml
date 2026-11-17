@@ -46,13 +46,13 @@ jobs:
         run: |
           chmod +x ./gradlew
           ./gradlew --no-daemon packageMotionPhotoSender
-          test -s build/dist/dev.motion.photo.sender@0.2.0.zip
+          test -s build/dist/dev.motion.photo.sender@0.3.0.zip
 
       - name: Upload compiled plugin
         uses: actions/upload-artifact@v4
         with:
-          name: Motion-Photo-Sender-v0.2.0
-          path: template/build/dist/dev.motion.photo.sender@0.2.0.zip
+          name: Motion-Photo-Sender-v0.3.0
+          path: template/build/dist/dev.motion.photo.sender@0.3.0.zip
           if-no-files-found: error
           retention-days: 30
 
@@ -61,7 +61,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create '${{ github.ref_name }}' template/build/dist/dev.motion.photo.sender@0.2.0.zip \
+          gh release create '${{ github.ref_name }}' template/build/dist/dev.motion.photo.sender@0.3.0.zip \
             --repo '${{ github.repository }}' \
-            --title 'Motion Photo Sender v0.2.0' \
+            --title 'Motion Photo Sender v0.3.0' \
             --notes 'Экспериментальная сборка для Valenced; требуется тестирование на устройстве.'

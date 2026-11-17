@@ -29,6 +29,16 @@ val motionPlugin = plugin {
                 withContext(Dispatchers.Main) { askUser(activity) }
             }
 
+            registerNativeAsyncMethod("dev.motion.photo.share") { arguments ->
+                val uri = arguments.getOrNull(0) as? String
+                    ?: error("Missing converted file URI")
+                val mime = arguments.getOrNull(1) as? String
+                    ?: error("Missing converted file type")
+                val filename = arguments.getOrNull(2) as? String
+                    ?: error("Missing converted filename")
+                MotionShare.send(activity, uri, mime, filename)
+            }
+
             registerNativeAsyncMethod("dev.motion.photo.process") { arguments ->
                 val originalUri = arguments.getOrNull(0) as? String
                     ?: return@registerNativeAsyncMethod null

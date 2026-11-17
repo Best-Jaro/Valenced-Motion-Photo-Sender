@@ -163,19 +163,34 @@ function MotionPhotoBadge({ uri }: { uri: string }) {
         event.stopPropagation()
         if (busy) return
         setBusy(true)
-        void callNativeMethod('dev.motion.photo.chooseFormat', [])
-          .then(selected => {
-            if (stopped || !['mp4', 'gif', 'photo'].includes(String(selected))) return
-            const format = selected as Format
-            selectedFormats.set(key, format)
-            setChoice(format)
-            toast(`Motion Photo: ${format.toUpperCase()}`)
+        void (async () => {
+          const selected = await callNativeMethod('dev.motion.photo.chooseFormat', [])
+          if (stopped || !['mp4', 'gif', 'photo'].includes(String(selected))) return
+          const format = selected as Format
+          toast(`Конвертирую Motion Photo в ${format.toUpperCase()}...`)
+          const processed = await callNativeMethod('dev.motion.photo.process', [uri, format]) as ProcessingResult | null
+          if (!processed?.changed || !processed.uri || !processed.mime || !processed.filename) {
+            throw new Error('Не удалось извлечь видео из выбранной фотографии.')
+          }
+          const shared = await callNativeMethod('dev.motion.photo.share', [
+            processed.uri,
+            processed.mime,
+            processed.filename,
+          ])
+          if (shared !== true) throw new Error('Android не открыл отправку файла.')
+          // Do not mark the original gallery attachment as converted.
+          // This flow shares the newly created file rather than changing the gallery item.
+          setChoice(format)
+          toast(`Готово: ${format.toUpperCase()}. Подтверди отправку в Discord.`)
+        })()
+          .catch(error => {
+            const detail = error instanceof Error ? error.message : String(error)
+            toast(`Motion Photo: ${detail}`, true)
           })
-          .catch(() => toast('Не удалось открыть выбор формата', true))
           .finally(() => setBusy(false))
       }}
     >
-      <Text style={styles.badgeText}>{choice ? choice.toUpperCase() : '▶'}</Text>
+      <Text style={styles.badgeText}>{busy ? '...' : choice ? choice.toUpperCase() : '▶'}</Text>
     </Pressable>
   )
 }
@@ -299,6 +314,10 @@ declare module '@valenced/modules/native' {
     'dev.motion.photo.process': [
       args: [uri: string, mode: Format | 'ask'],
       returnValue: ProcessingResult | null,
+    ]
+    'dev.motion.photo.share': [
+      args: [uri: string, mime: string, filename: string],
+      returnValue: boolean,
     ]
   }
 }
