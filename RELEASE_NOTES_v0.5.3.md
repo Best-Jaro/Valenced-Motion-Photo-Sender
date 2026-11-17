@@ -1,15 +1,15 @@
-# Motion Photo Sender v0.5.3 — две версии
+# Motion Photo Sender v0.5.3 — Full and GIF Only
 
-В этом релизе **два альтернативных ZIP-пакета для Valenced**:
+This release contains **two alternative Valenced plugin ZIP files**.
 
 ### MotionPhotoSender-Full-v0.5.3.zip
-Полный плагин: MP4 без перекодирования, MP4 со стоп-кадром, MP4 с фотографией, GIF и обычное фото. Основан на v0.5.2, без изменения алгоритмов обработки медиа. **MP4 по-прежнему экспериментален**, его исправление через MediaStore ещё проверяется на устройствах.
+The Full edition supports original MP4 extraction, MP4 freeze-frame preview, MP4 with photo cover, animated GIF, and still-photo forwarding. Based on v0.5.2. Video upload via Android MediaStore remains experimental on some devices.
 
 ### MotionPhotoSender-GIF-Only-v0.5.3.zip
-Облегчённая версия: **только конвертация Android Motion Photo в GIF**. Без режимов MP4, без видеопубликации MediaStore и без меню форматов. В галерее Discord нажми зелёную кнопку на Motion Photo: она переключится на GIF. Затем отметь фотографию и нажми обычную кнопку отправки Discord. Повторное нажатие отключает GIF.
+A lightweight GIF-only edition. Tap the green Motion Photo button in Discord's gallery to toggle GIF conversion, then select the image and send normally. Tap again to disable GIF conversion.
 
-**У обоих ZIP одинаковый ID `dev.motion.photo.sender`**. Это два варианта одного и того же плагина, которые должны **заменять друг друга**, а не работать одновременно. При переключении между версиями отключи/удали старую и перезапусти Discord.
+Both editions use the **same plugin ID** (`dev.motion.photo.sender`) and replace one another. Disable or uninstall the old edition and restart Discord when switching.
 
-Внутренние архивы являются готовыми установочными ZIP-плагинами Valenced. Не путай их с общим ZIP из GitHub Actions: на странице Releases оба установочных ZIP доступны по отдельности.
+Both ZIPs in this release are directly installable Valenced plugin packages and can be downloaded individually from GitHub Releases.
 
-Проект: https://github.com/Best-Jaro/Valenced-Motion-Photo-Sender
+Project: https://github.com/Best-Jaro/Valenced-Motion-Photo-Sender

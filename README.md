@@ -1,93 +1,64 @@
 # Motion Photo Sender for Valenced
 
-Экспериментальный Android-плагин, который обнаруживает Motion Photo при отправке фотографии в Discord, предлагает MP4 / GIF / фото и старается использовать исходный фотокадр для превью.
+Convert Android Motion Photos into animated GIFs or MP4 videos directly in Discord's media picker, without an Android share sheet.
 
-Статус: **ранний прототип**. Конвертация на OnePlus и других устройствах требует проверки. После первой успешной сборки ZIP появится в GitHub Actions → Artifacts.
+This repository contains **two alternative editions** of the same Valenced plugin. Choose only one at a time.
 
-## Сборка
+## Editions
 
-Автоматический workflow использует [официальный шаблон Valenced](https://github.com/Valenced/valenced-plugin-template), установленный JDK 25, Android SDK и Bun. Для GitHub Packages может потребоваться секрет репозитория `READ_PACKAGES_TOKEN` с минимальным правом `read:packages`.
+### Full — MP4, GIF, still photo
 
-## Безопасность
+The Full edition supports:
+- **Original video:** extract the embedded MP4 without re-encoding (fast, preserves original video/audio).
+- **Freeze frame:** prepend a 0.5-second hold of the first video keyframe without re-encoding the remaining video.
+- **Photo cover:** prepend the original high-resolution still photo for 0.5 seconds (slower and requires re-encoding).
+- **Animated GIF:** convert to a GIF with an adaptive per-frame color palette.
+- **Still photo:** send the image without animation.
 
-Оригинальные фотографии не выкладываются в репозиторий. Файлы обрабатываются локально на устройстве. Ошибки преобразования не должны приводить к молчаливой отправке изменённого вложения.
+Tap the green badge on a Motion Photo thumbnail to open a **Material 3-inspired bottom sheet**. Choose the format, select the thumbnail, then use Discord's ordinary Send button. The converted media is added to the same channel/draft.
 
-Исходники находятся в `plugins/motion-photo-sender/`. Автоматическая сборка: `.github/workflows/build.yml`.
+**Note:** the MP4 upload path is experimental across Discord versions and Android manufacturers. The original video and freeze-frame modes preserve the underlying HEVC/AAC stream; the photo-cover mode re-encodes video.
 
-## Версия 0.2.0 — кнопка Live Photo
+### GIF Only — smaller and simpler
 
-Плагин пытается обнаруживать Motion Photo в встроенной медиагалерее Discord. На распознанных миниатюрах появляется зелёная кнопка ▶, похожая на выбор Live Photo в WhatsApp. Нажатие открывает меню MP4 / GIF / фото. Выбор передаётся обработчику стандартной отправки. При отсутствии выбранного формата сохраняется прежний диалог при отправке. Кнопка не добавляется в интерфейс WhatsApp — только Discord.
+The GIF Only edition includes the Motion Photo parser and GIF encoder, but no MP4 rendering or video export features. Tap the green badge on a Motion Photo thumbnail to enable GIF; tap again to disable it. Select the thumbnail and send normally in Discord.
 
-**Ограничения:** если Discord использует другой медиапикер или предварительно преобразует оригинальный файл, кнопка/конвертация могут быть недоступны. В этом случае требуется отладка на устройстве. Превью MP4 определяется Discord и не гарантировано.
+Both ZIPs intentionally use the **same plugin ID** (`dev.motion.photo.sender`). Installing one edition replaces the other. Disable or remove the previous edition and restart Discord after switching.
 
-## Версия 0.3.0 — реальная отправка выбранного формата
+## English interface
 
-После нажатия зелёной кнопки у Motion Photo плагин сразу предлагает MP4/GIF/фото, **сразу конвертирует** исходный файл и запускает системную отправку Android с готовым файлом, адресуя его установленному Valenced/Discord. При отсутствии обработчика открывается общий Android Share Sheet. Не нужно нажимать обычную кнопку отправки исходного JPEG в старой галерее: она по-прежнему отправляет исходное фото.
+All plugin prompts, menus, notifications, and error messages are in English. The Full edition uses a rounded, Material 3-inspired native Android bottom sheet with dark mode and optional Android 12+ dynamic colors.
 
-**Ограничение интеграции:** прямое добавление готового вложения в исходный черновик Discord всё ещё не реализовано, поскольку медиа-галерея Discord обходит исходный перехват uploadLocalFiles. Отправку требуется подтвердить в появившемся окне Discord/Android. Ошибки конвертации отображаются отдельно.
+## Temporary file cleanup
 
-**Хранение:** Android 10+ создаёт копию готового MP4/GIF/JPEG в публичной папке Movies/MotionPhotoSender или Pictures/MotionPhotoSender. Это нужно для безопасной передачи content:// URI между приложениями без FileProvider. После отправки копию можно удалить через файловый менеджер.
+The plugin converts media locally on your device; it never uploads data to third-party conversion services.
 
-## v0.4.0 — качество и скорость (экспериментально)
+Discord's Android MP4 uploader requires a valid `content://media/...` URI. The Full edition therefore temporarily publishes a generated video in Android MediaStore (`Movies/MotionPhotoSender`). It **automatically deletes its own generated media and cache files after a five-minute grace period** while the app is running. Old generated files from previous sessions are also cleaned at startup. This includes leftovers from older editions that accumulated in the dedicated folder.
 
-По сообщению пользователя на OnePlus Nord 4 были заметны растяжение MP4, сильные цветовые искажения GIF и долгая обработка.
+The five-minute window protects in-progress uploads and retries. This is **best-effort cleanup**, not an absolute guarantee of immediate deletion: if the app is force-stopped or the device reboots, cleanup happens at the next plugin launch after files become stale. Avoid manually renaming unrelated files into the dedicated `MotionPhotoSender` folder.
 
-- **MP4 — быстро**: извлекает оригинальный H.265/HEVC + AAC из Motion Photo без транскодирования. Сохраняет исходные пропорции, поворот и качество. **Фото не вставляется в начало**, и Discord может не показывать обложку/превью HEVC.
-- **MP4 — с фотографией в начале**: перекодирует видео в H.264 с 0,5-секундным фотокадром; перед этим учитывает display rotation видео (например, хранимые горизонтально 1440×1080 кадры с поворотом −90°). Вместо растяжения использует вписывание в кадр с сохранением пропорций. Из-за перекодирования остаётся медленным; используется 15 FPS для снижения нагрузки.
-- **GIF**: 256-цветная *адаптивная палитра для каждого кадра* вместо фиксированной RGB332 (8 оттенков красного, 8 зелёного, 4 синего). 10 FPS, до 360×480, масштабирование с сохранением пропорций. GIF по своей природе ограничен 256 цветами на кадр.
-- Режим «Обычная фотография» работает без декодирования видео.
+The GIF Only edition stores generated files only in the app's private cache and uses the same cleanup policy.
 
-*Проверка на конкретном телефоне ещё требуется.* Установка: Actions → успешный запуск Build Motion Photo Sender → Artifacts → распаковать внешний архив и установить внутренний ZIP.
+## Download and install
 
-## v0.5.0 — отправка внутри галереи Discord
+**[GitHub Releases](https://github.com/Best-Jaro/Valenced-Motion-Photo-Sender/releases)**
 
-При нажатии на зелёную кнопку Motion Photo выбор формата запоминается. Затем нужно выделить фото и нажать обычную кнопку отправки **в той же галерее**. Плагин перехватывает событие `UPLOAD_ATTACHMENT_ADD_FILES`, блокирует исходный JPEG, обрабатывает выбранную фотографию и передаёт готовое вложение в тот же чат. Новое окно выбора чата не открывается.
+Download either `MotionPhotoSender-Full-v0.5.4.zip` or `MotionPhotoSender-GIF-Only-v0.5.4.zip`. They are **directly installable Valenced plugin ZIPs**: each contains `manifest.json`, `index.js`, and `plugin.jar`.
 
-При ошибке преобразования отправка отменяется с сообщением, JPEG не отправляется вместо видео молча.
+Install through Valenced's plugin settings, then restart Discord.
 
-- **Быстрый MP4:** извлечение исходного HEVC/AAC без потери качества.
-- **Быстрый MP4 со стоп-кадром:** добавление 0,5 сек первого *видеокадра* через MediaExtractor/MediaMuxer, без повторного кодирования видеодорожки. Это не оригинальное JPEG-фото и потому может не совпадать с ним.
-- **MP4 с настоящим фото:** прежний медленный режим, который кодирует видео заново.
-- **GIF:** улучшенная адаптивная палитра.
+## Building from source
 
-JPEG нельзя поместить внутрь MP4 в качестве обычного видеокадра: фотографию сначала пришлось бы кодировать как совместимый HEVC IDR-кадр. Соединение с существующим видеопотоком без перекодировки остальных кадров возможно только при согласованных параметрах кодека, и его поддержка не гарантирована. Алгоритм превью Discord тоже может выбрать другой кадр.
+The official [Valenced plugin template](https://github.com/Valenced/valenced-plugin-template) and a GitHub Actions workflow are used to build both editions. The workflow compiles the Android Kotlin implementation and TypeScript bundle separately, verifies both archives, and publishes them as distinct assets in one GitHub Release.
 
-Проверить работу в самой галерее и совместимость быстрого стоп-кадра нужно на устройстве.
+Native Kotlin sources:
+- `plugins/motion-photo-sender/src/main/kotlin/dev/motion/photo`
+- `plugins/motion-photo-gif-only/src/main/kotlin/dev/motion/photo`
 
-## v0.5.1 — MP4 upload fix (experimental)
+## Limitations
 
-GIF uploaded successfully in v0.5.0, but every MP4 variant gave Discord's generic Upload Failed dialog.
-
-Root cause suspected: v0.5.0 cloned an IMAGE_PICKER photo descriptor, inherited photo-specific platform flags, and then deleted width/height/playableDuration. Those fields may be essential to Discord's video-specific upload and optimization path.
-
-v0.5.1 creates a clean React Native MP4 attachment with `platform: 0` (not image picker), `origin: 1`, actual video width/height and duration read via Android MediaMetadataRetriever; sets `allowOptimization: false` to avoid Discord's optional video recompression. Source HEVC/AAC is still copied unchanged in the fast MP4 modes. GIF flow is unchanged.
-
-**This is a hypothesis-driven fix, not yet verified on the phone**. If Upload Failed still appears, capture Valenced logs at the upload moment; a generic dialog does not expose the actual HTTP/native error.
-
-## v0.5.2 — исправление Unsupported video URI format
-
-На OnePlus Nord 4 ошибка Discord Upload Failed была локализована по Debug Logs:
-`50046 ERROR_SOURCE_UNKNOWN`, `Unsupported video URI format: file:///data/user/0/app.valenced/cache/motion-photo-sender/...mp4`.
-
-Это ошибка формата адреса файла в **локальном загрузчике Discord**, а не видео или сети.
-
-Теперь после создания MP4 он проверяется через `MediaMetadataRetriever`, затем публикуется в `MediaStore.Video.Media.EXTERNAL_CONTENT_URI` (Android 10+) и передаётся Discord как URI вида `content://media/external/video/media/...`. Убран неподдерживаемый приватный `file://` URI для видеовложений; JS дополнительно валидирует схему.
-
-**Канал, галерея и черновик Discord остаются прежними**: нет отдельного системного окна отправки. GIF обрабатываются как в v0.5.1.
-
-**Хранение:** преобразованные MP4 копируются в общую папку Android `Movies/MotionPhotoSender`. Копии останутся там и будут видны другим приложениям с доступом к медиа, пока ты их не удалишь через файловый менеджер. Это цена простого универсального MediaStore URI без отдельного ContentProvider. Исходные фотографии остаются прежними.
-
-Сборка не равна проверке отправки; протестируй все MP4-режимы на OnePlus.
-
-## v0.5.3 — две альтернативные сборки в GitHub Releases
-
-В одном релизе доступны **два готовых ZIP для Valenced**:
-
-- **Full**: прежний полноценный Motion Photo Sender (MP4 / GIF / фото), код медиаобработки такой же, как в v0.5.2.
-- **GIF Only**: облегчённый вариант без MP4. В галерее нажми зелёную кнопку Motion Photo, чтобы выбрать GIF, затем отметь фото и отправь через обычную кнопку Discord. Повторное нажатие возвращает отправку обычной фотографии.
-
-Исходники GIF-версии находятся в `plugins/motion-photo-gif-only/`. Для неё используется тот же универсальный Motion Photo парсер и проверенный GIF-конвертер с адаптивной палитрой; MP4-энкодеры в её ZIP не входят.
-
-**Оба пакета имеют одинаковый ID `dev.motion.photo.sender`.** Выбирай и устанавливай только один из них; при смене версии сначала останови старую и после установки перезапусти Discord. Эти ZIP — альтернативные редакции одного плагина, а не два одновременно работающих дополнения.
-
-[Releases — скачать обе версии](https://github.com/Best-Jaro/Valenced-Motion-Photo-Sender/releases)
+- The plugin requires access to the original Motion Photo, not an image already stripped of embedded video.
+- Motion Photo metadata varies by manufacturer. Pixel, OnePlus/OPPO, Samsung, Xiaomi, and other variants may require additional device-specific testing.
+- GIFs do not preserve audio and are limited to 256 colors per frame.
+- Discord chooses video thumbnails independently; placing a still frame at the beginning does **not** guarantee its thumbnail.
+- Never share private photos or raw logs containing authentication tokens when reporting issues.

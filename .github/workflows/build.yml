@@ -52,16 +52,16 @@ jobs:
           mkdir -p ../release-assets
 
           ./gradlew --no-daemon packageMotionPhotoSender
-          full="build/dist/dev.motion.photo.sender@0.5.3.zip"
+          full="build/dist/dev.motion.photo.sender@0.5.4.zip"
           test -s "$full"
           unzip -p "$full" manifest.json | grep -Fq '"name": "Motion Photo Sender"'
-          cp "$full" ../release-assets/MotionPhotoSender-Full-v0.5.3.zip
+          cp "$full" ../release-assets/MotionPhotoSender-Full-v0.5.4.zip
 
           ./gradlew --no-daemon packageMotionPhotoGifOnly
-          gif="build/dist/dev.motion.photo.sender@0.5.3.zip"
+          gif="build/dist/dev.motion.photo.sender@0.5.4.zip"
           test -s "$gif"
           unzip -p "$gif" manifest.json | grep -Fq '"name": "Motion Photo Sender (GIF Only)"'
-          cp "$gif" ../release-assets/MotionPhotoSender-GIF-Only-v0.5.3.zip
+          cp "$gif" ../release-assets/MotionPhotoSender-GIF-Only-v0.5.4.zip
 
           for pkg in ../release-assets/*.zip; do
             unzip -t "$pkg" | tail -n 1
@@ -73,7 +73,7 @@ jobs:
       - name: Save both ZIPs in GitHub Actions
         uses: actions/upload-artifact@v4
         with:
-          name: Motion-Photo-Sender-v0.5.3-Both-Editions
+          name: Motion-Photo-Sender-v0.5.4-Both-Editions
           path: release-assets/*.zip
           if-no-files-found: error
           retention-days: 90
@@ -88,14 +88,14 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          tag="v0.5.3"
+          tag="v0.5.4"
           if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release upload "$tag" ../release-assets/*.zip --clobber --repo "$GITHUB_REPOSITORY"
-            gh release edit "$tag" --notes-file RELEASE_NOTES_v0.5.3.md --repo "$GITHUB_REPOSITORY"
+            gh release edit "$tag" --notes-file RELEASE_NOTES_v0.5.4.md --repo "$GITHUB_REPOSITORY"
           else
             gh release create "$tag" ../release-assets/*.zip \
               --repo "$GITHUB_REPOSITORY" \
               --target "$GITHUB_SHA" \
-              --title "Motion Photo Sender v0.5.3 — Full + GIF Only" \
-              --notes-file RELEASE_NOTES_v0.5.3.md
+              --title "Motion Photo Sender v0.5.4 — Full + GIF Only" \
+              --notes-file RELEASE_NOTES_v0.5.4.md
           fi

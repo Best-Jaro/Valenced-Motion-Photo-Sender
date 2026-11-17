@@ -126,17 +126,17 @@ async function convertUploadAction(action: UploadAction, selected: Map<number, F
       continue
     }
     const uri = candidateUri(file)
-    if (!uri) throw Error('Discord не предоставил URI Motion Photo.')
-    toast('Конвертирую Motion Photo в GIF...')
+    if (!uri) throw Error('Discord did not provide a Motion Photo URI.')
+    toast('Converting Motion Photo to GIF...')
     const converted = await callNativeMethod('dev.motion.photo.process', [uri, format]) as ProcessingResult | null
-    if (!converted?.changed) throw Error('Оригинальная Motion Photo недоступна для чтения.')
+    if (!converted?.changed) throw Error('The original Motion Photo is unavailable.')
     files.push(convertedAttachment(file, converted))
   }
   if (stopped) return
   // Preserve Discord's current chat and draft. Keep the verified GIF descriptor.
   Dispatcher.dispatch({ ...action, files, motionPhotoSenderHandled: true } as any)
   selectedFormats.clear()
-  toast('Готовый файл передан загрузчику Discord.')
+  toast('Converted attachment is ready in Discord.')
 }
 
 function toast(text: string, critical = false) {
@@ -208,18 +208,18 @@ function MotionPhotoBadge({ uri }: { uri: string }) {
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel="Выбрать формат Motion Photo"
+      accessibilityLabel="Choose Motion Photo format"
       style={[styles.badge, choice ? styles.badgeChosen : null]}
       onPress={event => {
         event.stopPropagation()
         if (choice === 'gif') {
           selectedFormats.delete(key)
           setChoice(undefined)
-          toast('GIF отключён. Фотография отправится без изменений.')
+          toast('GIF disabled. The original photo will be sent.')
         } else {
           selectedFormats.set(key, 'gif')
           setChoice('gif')
-          toast('GIF выбран. Отметь фотографию и нажми обычную кнопку отправки.')
+          toast('GIF selected. Select the photo and tap Discord's Send button.')
         }
       }}
     >
@@ -307,7 +307,7 @@ export default plugin({
         currentPlugin.reportError(error)
         const detail = error instanceof Error ? error.message : String(error)
         // Fail closed: do NOT upload the original instead.
-        toast('Motion Photo: ' + detail + '. Отправка отменена.', true)
+        toast('Motion Photo: ' + detail + '. Upload cancelled.', true)
       })
       return undefined
     }))

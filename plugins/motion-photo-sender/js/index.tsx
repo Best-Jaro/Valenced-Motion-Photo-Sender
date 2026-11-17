@@ -79,7 +79,7 @@ function convertedAttachment(file: UploadItem, result: ProcessingResult): Upload
     // The Android video uploader rejects file:///data/user/0/... cache URIs.
     // Native code must register the output through MediaStore first.
     if (!result.uri.startsWith('content://media/')) {
-      throw Error('MP4 не зарегистрирован в Android MediaStore (content:// URI отсутствует).')
+      throw Error('The MP4 was not registered in Android MediaStore (missing content:// URI).')
     }
     // Photo picker assets carry IMAGE_PICKER platform=1 and image-only fields.
     // Reusing that descriptor for an app-created MP4 breaks Discord's native
@@ -90,7 +90,7 @@ function convertedAttachment(file: UploadItem, result: ProcessingResult): Upload
         !Number.isFinite(width) || !Number.isFinite(height) ||
         !Number.isFinite(playableDuration) ||
         width <= 0 || height <= 0 || playableDuration <= 0) {
-      throw Error('Не удалось получить размеры или длительность MP4.')
+      throw Error('Unable to read the MP4 dimensions or duration.')
     }
     return {
       id,
@@ -160,10 +160,10 @@ async function convertUploadAction(action: UploadAction, selected: Map<number, F
       continue
     }
     const uri = candidateUri(file)
-    if (!uri) throw Error('Discord не предоставил URI Motion Photo.')
-    toast(format === 'mp4' ? 'Извлекаю исходный MP4...' : 'Конвертирую Motion Photo...')
+    if (!uri) throw Error('Discord did not provide a Motion Photo URI.')
+    toast(format === 'mp4' ? 'Extracting original MP4...' : 'Converting Motion Photo...')
     const converted = await callNativeMethod('dev.motion.photo.process', [uri, format]) as ProcessingResult | null
-    if (!converted?.changed) throw Error('Оригинальная Motion Photo недоступна для чтения.')
+    if (!converted?.changed) throw Error('The original Motion Photo is unavailable.')
     files.push(convertedAttachment(file, converted))
   }
   if (stopped) return
@@ -177,7 +177,7 @@ async function convertUploadAction(action: UploadAction, selected: Map<number, F
     motionPhotoSenderHandled: true,
   } as any)
   selectedFormats.clear()
-  toast('Готовый файл передан загрузчику Discord.')
+  toast('Converted attachment is ready in Discord.')
 }
 
 function toast(text: string, critical = false) {
@@ -250,7 +250,7 @@ function MotionPhotoBadge({ uri }: { uri: string }) {
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel="Выбрать формат Motion Photo"
+      accessibilityLabel="Choose Motion Photo format"
       style={[styles.badge, choice ? styles.badgeChosen : null]}
       disabled={busy}
       onPress={event => {
@@ -269,11 +269,11 @@ function MotionPhotoBadge({ uri }: { uri: string }) {
             const format = selected as Format
             selectedFormats.set(key, format)
             setChoice(format)
-            toast('Формат выбран. Отметь фото и нажми обычную кнопку отправки в галерее.')
+            toast('Format selected. Select the photo and tap Discord's Send button.')
           })
           .catch(error => {
             const detail = error instanceof Error ? error.message : String(error)
-            toast('Выбор формата: ' + detail, true)
+            toast('Format selection: ' + detail, true)
           })
           .finally(() => setBusy(false))
       }}
@@ -362,7 +362,7 @@ export default plugin({
         currentPlugin.reportError(error)
         const detail = error instanceof Error ? error.message : String(error)
         // Fail closed: do NOT upload the original instead.
-        toast('Motion Photo: ' + detail + '. Отправка отменена.', true)
+        toast('Motion Photo: ' + detail + '. Upload cancelled.', true)
       })
       return undefined
     }))

@@ -18,6 +18,7 @@ import kotlinx.coroutines.withContext
 val motionPlugin = plugin {
     start {
         withAppActivity { activity ->
+            MotionTempFiles.onStart(activity)
             registerNativeAsyncMethod("dev.motion.photo.inspect") { arguments ->
                 val sourceUri = arguments.getOrNull(0) as? String
                     ?: return@registerNativeAsyncMethod false
@@ -41,19 +42,20 @@ val motionPlugin = plugin {
                     val cache = File(activity.cacheDir, "motion-photo-sender").apply { mkdirs() }
                     val stamp = System.nanoTime().toString(36)
                     val photo = File(cache, "motion-$stamp.jpg").apply { writeBytes(parts.photo) }
-                    if (mode == "photo") return@withContext result(photo, "image/jpeg")
+                    if (mode == "photo") return@withContext result(photo, "image/jpeg", activity)
                     val video = File(cache, "motion-$stamp-original.mp4").apply { writeBytes(parts.video) }
                     val gif = File(cache, "motion-$stamp.gif")
                     MotionGifEncoder.write(photo, video, gif)
-                    return@withContext result(gif, "image/gif")
+                    return@withContext result(gif, "image/gif", activity)
                 }
             }
         }
     }
 }
 
-private fun result(file: File, mime: String): Map<String, Any> {
+private fun result(file: File, mime: String, activity: Activity): Map<String, Any> {
     require(file.isFile && file.length() > 0) { "GIF output is empty" }
+    MotionTempFiles.afterConversion(activity)
     return mapOf(
         "changed" to true,
         "uri" to Uri.fromFile(file).toString(),

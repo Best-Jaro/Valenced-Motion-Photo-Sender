@@ -10,14 +10,13 @@ import app.valenced.plugins.plugin
 import app.valenced.xposed.api.registerNativeAsyncMethod
 import java.io.File
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
-import kotlin.coroutines.resume
 
 @Suppress("unused")
 val motionPlugin = plugin {
     start {
         withAppActivity { activity ->
+            MotionTempFiles.onStart(activity)
             registerNativeAsyncMethod("dev.motion.photo.inspect") { arguments ->
                 val uri = arguments.getOrNull(0) as? String
                     ?: return@registerNativeAsyncMethod false
@@ -82,7 +81,7 @@ val motionPlugin = plugin {
                             withContext(Dispatchers.Main) {
                                 AlertDialog.Builder(activity)
                                     .setTitle("Motion Photo")
-                                    .setMessage("Не получилось добавить фото в начало MP4 на этом устройстве. Видео будет отправлено в оригинальном качестве, без обложки.")
+                                    .setMessage("Photo cover generation failed. The original MP4 will be sent without a cover.")
                                     .setPositiveButton("OK", null).show()
                             }
                         }
@@ -138,28 +137,12 @@ private fun result(file: File, mime: String, activity: Activity): Map<String, An
         // Produce an Android MediaStore VIDEO content URI instead.
         output["uri"] = MotionVideoUri.publish(activity, file).toString()
     }
+    val tempUri = if (mime == "video/mp4") Uri.parse(output["uri"] as String) else null
+    MotionTempFiles.afterConversion(activity, tempUri)
     return output
 }
 
-private suspend fun askUser(activity: Activity): String = suspendCancellableCoroutine { cont ->
-    val options = arrayOf(
-        "MP4 — быстро, оригинальное видео",
-        "MP4 — быстрый стоп-кадр из видео 0,5с",
-        "MP4 — с настоящим фото (медленно)",
-        "GIF — улучшенные цвета",
-        "Обычная фотография",
-        "Отмена"
-    )
-    val dialog = AlertDialog.Builder(activity)
-        .setTitle("Send Motion Photo as...")
-        .setItems(options) { _, index ->
-            if (cont.isActive) cont.resume(arrayOf("mp4", "mp4-freeze", "mp4-cover", "gif", "photo", "cancel")[index])
-        }
-        .setOnCancelListener { if (cont.isActive) cont.resume("cancel") }
-        .create()
-    cont.invokeOnCancellation { dialog.dismiss() }
-    dialog.show()
-}
+private suspend fun askUser(activity: Activity): String = MotionFormatSheet.show(activity)
 
 private fun java.io.InputStream.readBytesLimited(max: Long): ByteArray {
     val output = java.io.ByteArrayOutputStream()
