@@ -1,0 +1,73 @@
+name: Build Motion Photo Sender
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - name: Checkout plugin source
+        uses: actions/checkout@v4
+        with:
+          path: source
+
+      - name: Checkout official Valenced template
+        uses: actions/checkout@v4
+        with:
+          repository: Valenced/valenced-plugin-template
+          ref: 9a4f9187137a75d86fe552d0e594889a6e6fd7e5
+          path: template
+
+      - name: Install JDK 25
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      - name: Install Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android platform 36
+        run: sdkmanager 'platforms;android-36' 'build-tools;36.0.0'
+
+      - name: Copy plugin into template
+        run: cp -R source/plugins/motion-photo-sender template/plugins/
+
+      - name: Build installable ZIP
+        working-directory: template
+        env:
+          GITHUB_ACTOR: ${{ github.actor }}
+          GITHUB_TOKEN: ${{ secrets.READ_PACKAGES_TOKEN || github.token }}
+        run: |
+          chmod +x ./gradlew
+          ./gradlew --no-daemon packageMotionPhotoSender
+          test -s build/dist/dev.motion.photo.sender@0.1.0.zip
+
+      - name: Upload compiled plugin
+        uses: actions/upload-artifact@v4
+        with:
+          name: Motion-Photo-Sender-v0.1.0
+          path: template/build/dist/dev.motion.photo.sender@0.1.0.zip
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Release on version tag
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create '${{ github.ref_name }}' template/build/dist/dev.motion.photo.sender@0.1.0.zip \
+            --repo '${{ github.repository }}' \
+            --title 'Motion Photo Sender v0.1.0' \
+            --notes 'Экспериментальная сборка для Valenced; требуется тестирование на устройстве.'
