@@ -42,12 +42,15 @@ jobs:
       # Packaging tasks share build/dist and clean it when run.
       # Build sequentially and save the first ZIP before building the second.
       - name: Build full and GIF-only plugin ZIPs
+        id: compile
         working-directory: template
         env:
           GITHUB_ACTOR: ${{ github.actor }}
           GITHUB_TOKEN: ${{ secrets.READ_PACKAGES_TOKEN || github.token }}
         run: |
-          set -euo pipefail
+          set -uo pipefail
+          set +e
+          {
           chmod +x ./gradlew
           mkdir -p ../release-assets
 
@@ -69,6 +72,25 @@ jobs:
             unzip -Z -1 "$pkg" | grep -Fxq 'plugin.jar'
             echo "Verified $pkg"
           done
+          } > ../gradle-log.txt 2>&1
+          code=$?
+          echo "status=$code" >> "$GITHUB_OUTPUT"
+          tail -n 70 ../gradle-log.txt
+          exit 0
+
+      - name: Publish filtered compiler errors to diagnostics branch
+        if: steps.compile.outputs.status != '0'
+        working-directory: source
+        run: |
+          mkdir -p diagnostics
+          { grep -Ei '(^e: |error:|FAILURE:|Compilation error|Unresolved reference|Cannot access|Type mismatch|overload resolution ambiguity|TypeScript error)' ../gradle-log.txt || true; tail -n 35 ../gradle-log.txt; } > diagnostics/last-build.txt
+          git config user.name github-actions
+          git config user.email github-actions@users.noreply.github.com
+          git checkout -B ci-diagnostics
+          git add diagnostics/last-build.txt
+          git commit -m 'ci: capture compiler errors [skip ci]'
+          git push origin HEAD:refs/heads/ci-diagnostics --force
+          exit 1
 
       - name: Save both ZIPs in GitHub Actions
         uses: actions/upload-artifact@v4
