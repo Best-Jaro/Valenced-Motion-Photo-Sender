@@ -76,6 +76,11 @@ function convertedAttachment(file: UploadItem, result: ProcessingResult): Upload
   if (!result.uri || !result.filename || !result.mime) throw Error('Converted media metadata is incomplete')
   const id = String(file.id ?? file.filename ?? 'motion') + '-motion-' + Date.now()
   if (result.mime === 'video/mp4') {
+    // The Android video uploader rejects file:///data/user/0/... cache URIs.
+    // Native code must register the output through MediaStore first.
+    if (!result.uri.startsWith('content://media/')) {
+      throw Error('MP4 не зарегистрирован в Android MediaStore (content:// URI отсутствует).')
+    }
     // Photo picker assets carry IMAGE_PICKER platform=1 and image-only fields.
     // Reusing that descriptor for an app-created MP4 breaks Discord's native
     // video uploader. Build an actual React Native file descriptor instead.

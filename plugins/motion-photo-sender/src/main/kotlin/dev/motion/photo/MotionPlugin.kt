@@ -51,7 +51,7 @@ val motionPlugin = plugin {
                     val stamp = System.nanoTime().toString(36)
                     val jpg = File(cache, "motion-$stamp.jpg").apply { writeBytes(parts.photo) }
                     if (choice == "photo") {
-                        return@withContext result(jpg, "image/jpeg")
+                        return@withContext result(jpg, "image/jpeg", activity)
                     }
                     val rawVideo = File(cache, "motion-$stamp-original.mp4").apply {
                         writeBytes(parts.video)
@@ -59,18 +59,18 @@ val motionPlugin = plugin {
                     try {
                         if (choice == "mp4") {
                             // Copy embedded HEVC/AAC unchanged, without changing FPS or quality.
-                            return@withContext result(rawVideo, "video/mp4")
+                            return@withContext result(rawVideo, "video/mp4", activity)
                         }
                         if (choice == "mp4-freeze") {
                             val out = File(cache, "motion-$stamp-freeze.mp4")
                             // This freezes the first VIDEO keyframe, not the separate JPEG still.
                             MotionFastFreeze.prependFirstVideoFrame(rawVideo, out, 500_000L)
-                            return@withContext result(out, "video/mp4")
+                            return@withContext result(out, "video/mp4", activity)
                         }
                         if (choice == "gif") {
                             val out = File(cache, "motion-$stamp.gif")
                             MotionGifEncoder.write(jpg, rawVideo, out)
-                            return@withContext result(out, "image/gif")
+                            return@withContext result(out, "image/gif", activity)
                         }
                         if (choice != "mp4-cover") error("Unsupported output mode: $choice")
                         val out = File(cache, "motion-$stamp.mp4")
@@ -86,7 +86,7 @@ val motionPlugin = plugin {
                                     .setPositiveButton("OK", null).show()
                             }
                         }
-                        return@withContext result(out, "video/mp4")
+                        return@withContext result(out, "video/mp4", activity)
                     } finally {
                         cache.listFiles()?.filter {
                             it.lastModified() < System.currentTimeMillis() - 24 * 60 * 60 * 1000L
@@ -98,7 +98,7 @@ val motionPlugin = plugin {
     }
 }
 
-private fun result(file: File, mime: String): Map<String, Any> {
+private fun result(file: File, mime: String, activity: Activity): Map<String, Any> {
     require(file.isFile && file.length() > 0) { "Output file was not created" }
     val output = mutableMapOf<String, Any>(
         "changed" to true,
@@ -134,6 +134,9 @@ private fun result(file: File, mime: String): Map<String, Any> {
         } finally {
             retriever.release()
         }
+        // Video uploads reject file:///data/user/0/... cache paths.
+        // Produce an Android MediaStore VIDEO content URI instead.
+        output["uri"] = MotionVideoUri.publish(activity, file).toString()
     }
     return output
 }

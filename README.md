@@ -63,3 +63,18 @@ Root cause suspected: v0.5.0 cloned an IMAGE_PICKER photo descriptor, inherited 
 v0.5.1 creates a clean React Native MP4 attachment with `platform: 0` (not image picker), `origin: 1`, actual video width/height and duration read via Android MediaMetadataRetriever; sets `allowOptimization: false` to avoid Discord's optional video recompression. Source HEVC/AAC is still copied unchanged in the fast MP4 modes. GIF flow is unchanged.
 
 **This is a hypothesis-driven fix, not yet verified on the phone**. If Upload Failed still appears, capture Valenced logs at the upload moment; a generic dialog does not expose the actual HTTP/native error.
+
+## v0.5.2 — исправление Unsupported video URI format
+
+На OnePlus Nord 4 ошибка Discord Upload Failed была локализована по Debug Logs:
+`50046 ERROR_SOURCE_UNKNOWN`, `Unsupported video URI format: file:///data/user/0/app.valenced/cache/motion-photo-sender/...mp4`.
+
+Это ошибка формата адреса файла в **локальном загрузчике Discord**, а не видео или сети.
+
+Теперь после создания MP4 он проверяется через `MediaMetadataRetriever`, затем публикуется в `MediaStore.Video.Media.EXTERNAL_CONTENT_URI` (Android 10+) и передаётся Discord как URI вида `content://media/external/video/media/...`. Убран неподдерживаемый приватный `file://` URI для видеовложений; JS дополнительно валидирует схему.
+
+**Канал, галерея и черновик Discord остаются прежними**: нет отдельного системного окна отправки. GIF обрабатываются как в v0.5.1.
+
+**Хранение:** преобразованные MP4 копируются в общую папку Android `Movies/MotionPhotoSender`. Копии останутся там и будут видны другим приложениям с доступом к медиа, пока ты их не удалишь через файловый менеджер. Это цена простого универсального MediaStore URI без отдельного ContentProvider. Исходные фотографии остаются прежними.
+
+Сборка не равна проверке отправки; протестируй все MP4-режимы на OnePlus.

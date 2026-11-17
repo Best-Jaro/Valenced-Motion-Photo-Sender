@@ -33,3 +33,12 @@
 2. Test fast freeze MP4, then full cover MP4. Confirm first two maintain source FPS and quality.
 3. Confirm that GIF still works; it uses the previous descriptor path.
 4. If video still fails, collect Valenced logcat/diagnostics around CloudUpload and actual upload failure; do not assume v0.5.1 has fixed device-specific issues.
+
+## v0.5.2 URI compatibility
+
+- Inspect Discord Debug Logs for previous `Unsupported video URI format: file:///data/user/0/...`.
+- Send a fast raw MP4 from the original gallery. Discord must be given a `content://media/...` URI, not `file://`.
+- If upload succeeds, test fast frozen intro and slow still intro modes.
+- Check GIF unchanged.
+- Check Android `Movies/MotionPhotoSender` for a temporary *persistent* copy of output MP4; remove unused copies manually.
+- If a different error appears, capture upload diagnostics near `CloudUpload` and `UploaderBase`; do not share account tokens.
