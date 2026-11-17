@@ -50,7 +50,8 @@ jobs:
         run: |
           set -uo pipefail
           set +e
-          {
+          (
+          set -euo pipefail
           chmod +x ./gradlew
           mkdir -p ../release-assets
 
@@ -72,7 +73,7 @@ jobs:
             unzip -Z -1 "$pkg" | grep -Fxq 'plugin.jar'
             echo "Verified $pkg"
           done
-          } > ../gradle-log.txt 2>&1
+          ) > ../gradle-log.txt 2>&1
           code=$?
           echo "status=$code" >> "$GITHUB_OUTPUT"
           tail -n 70 ../gradle-log.txt
