@@ -219,7 +219,7 @@ function MotionPhotoBadge({ uri }: { uri: string }) {
         } else {
           selectedFormats.set(key, 'gif')
           setChoice('gif')
-          toast('GIF selected. Select the photo and tap Discord's Send button.')
+          toast('GIF selected. Select the photo and tap the Send button in Discord.')
         }
       }}
     >

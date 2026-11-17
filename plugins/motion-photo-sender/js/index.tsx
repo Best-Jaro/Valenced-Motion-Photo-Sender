@@ -269,7 +269,7 @@ function MotionPhotoBadge({ uri }: { uri: string }) {
             const format = selected as Format
             selectedFormats.set(key, format)
             setChoice(format)
-            toast('Format selected. Select the photo and tap Discord's Send button.')
+            toast('Format selected. Select the photo and tap the Send button in Discord.')
           })
           .catch(error => {
             const detail = error instanceof Error ? error.message : String(error)
