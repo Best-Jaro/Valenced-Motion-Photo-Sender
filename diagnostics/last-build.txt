@@ -1,0 +1,39 @@
+error: Build failed with 1 error:
+Error:   x Expected ',', got 'ident'
+error: script "build" exited with code 1
+FAILURE: Build failed with an exception.
+ 274 |           .catch(error => {
+ 275 |             const detail = error instanceof Error ? error.message : String(error)
+     `----
+
+
+Caused by:
+    Syntax Error
+      at aggregateBindingErrorsIntoJsError (/home/runner/work/Valenced-Motion-Photo-Sender/Valenced-Motion-Photo-Sender/template/node_modules/rolldown/dist/shared/error-C18Vb1Fe.mjs:110:22)
+      at unwrapBindingResult (/home/runner/work/Valenced-Motion-Photo-Sender/Valenced-Motion-Photo-Sender/template/node_modules/rolldown/dist/shared/error-C18Vb1Fe.mjs:78:128)
+      at #build (/home/runner/work/Valenced-Motion-Photo-Sender/Valenced-Motion-Photo-Sender/template/node_modules/rolldown/dist/shared/rolldown-D1DJCGXB.mjs:147:34)
+
+error: script "build" exited with code 1
+
+[Incubating] Problems report is available at: file:///home/runner/work/Valenced-Motion-Photo-Sender/Valenced-Motion-Photo-Sender/template/build/reports/problems/problems-report.html
+
+FAILURE: Build failed with an exception.
+
+* What went wrong:
+Execution failed for task ':buildJsMotionPhotoSender' (registered in build file 'build.gradle.kts').
+> Process 'command '/home/runner/.bun/bin/bun'' finished with non-zero exit value 1
+
+* Try:
+> Run with --stacktrace option to get the stack trace.
+> Run with --info or --debug option to get more log output.
+> Run with --scan to get full insights from a Build Scan (powered by Develocity).
+> Get more help at https://help.gradle.org.
+
+Deprecated Gradle features were used in this build, making it incompatible with Gradle 10.
+
+You can use '--warning-mode all' to show the individual deprecation warnings and determine if they come from your own scripts or plugins.
+
+For more on this, please refer to https://docs.gradle.org/9.6.1/userguide/command_line_interface.html#sec:command_line_warnings in the Gradle documentation.
+
+BUILD FAILED in 1m 2s
+2 actionable tasks: 2 executed
